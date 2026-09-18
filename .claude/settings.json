@@ -1,0 +1,29 @@
+{
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; base=$(basename \"$f\"); if [[ \"$base\" =~ ^\\.env($|\\.) ]] && [[ \"$base\" != \".env.example\" ]]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Editing .env files is blocked by policy on this healthcare compliance project. Edit it directly outside Claude Code, or ask the user to confirm before proceeding.\"}}'; else echo '{}'; fi; }"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path // empty' | { read -r f; case \"$f\" in *.ts|*.tsx) pnpm exec oxlint --fix \"$f\" >/dev/null 2>&1; pnpm exec prettier --write \"$f\" >/dev/null 2>&1 ;; *.js|*.jsx|*.json|*.css|*.md) pnpm exec prettier --write \"$f\" >/dev/null 2>&1 ;; esac; true; }"
+          }
+        ]
+      }
+    ]
+  }
+}
