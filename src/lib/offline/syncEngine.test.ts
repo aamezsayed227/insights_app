@@ -90,7 +90,11 @@ describe('sync engine drain', () => {
 
     await drainOutbox()
 
+    // A true no-op: offline is checked once, up front, before any row is
+    // touched — so a short polling interval (see startSyncEngine) can't
+    // burn through a row's retry budget just by ticking while offline.
     const row = await offlineDb.outbox.get(id)
-    expect(row?.status).toBe('failed')
+    expect(row?.status).toBe('pending')
+    expect(row?.retryCount).toBe(0)
   })
 })

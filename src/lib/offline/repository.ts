@@ -1,4 +1,4 @@
-import { offlineDb } from './db'
+import { offlineDb, withDbRecovery } from './db'
 import { decryptPayload, encryptPayload } from './crypto'
 import { getSessionKey } from './session'
 import type { OutboxRow } from './types'
@@ -15,16 +15,18 @@ export async function enqueueOutboxRow(
   const { ciphertext, iv } = await encryptPayload(key, payload)
   const id = crypto.randomUUID()
 
-  await offlineDb.outbox.put({
-    id,
-    entityType,
-    endpoint,
-    encryptedPayload: ciphertext,
-    iv,
-    status: 'pending',
-    retryCount: 0,
-    createdAt: Date.now(),
-  })
+  await withDbRecovery(() =>
+    offlineDb.outbox.put({
+      id,
+      entityType,
+      endpoint,
+      encryptedPayload: ciphertext,
+      iv,
+      status: 'pending',
+      retryCount: 0,
+      createdAt: Date.now(),
+    }),
+  )
 
   return id
 }

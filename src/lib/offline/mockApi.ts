@@ -3,6 +3,8 @@
 // no live endpoint yet, so that requirement is enforced when a real API
 // client replaces this file, not here.
 
+import { isBrowserOnline } from './connectivity'
+
 export type MockOutcome = 'success' | 'validationRejected' | 'authExpired' | 'serverError'
 
 export class NetworkError extends Error {
@@ -38,17 +40,19 @@ function simulateLatency(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, SIMULATED_LATENCY_MS))
 }
 
-function assertOnline(): void {
-  if (!navigator.onLine) throw new NetworkError()
+// See connectivity.ts: navigator.onLine/its events can give no signal at
+// all on Safari, so isBrowserOnline() falls back to a real external probe.
+async function assertOnline(): Promise<void> {
+  if (!(await isBrowserOnline())) throw new NetworkError()
 }
 
 export async function mockApiPost(
   endpoint: string,
   _payload: unknown,
 ): Promise<{ status: number; body: { message: string } }> {
-  assertOnline()
+  await assertOnline()
   await simulateLatency()
-  assertOnline() // connectivity can drop mid-flight in a real demo
+  await assertOnline() // connectivity can drop mid-flight in a real demo
 
   switch (currentOutcome) {
     case 'success':
@@ -63,8 +67,8 @@ export async function mockApiPost(
 }
 
 export async function mockApiGet<T>(_endpoint: string, seed: T): Promise<T> {
-  assertOnline()
+  await assertOnline()
   await simulateLatency()
-  assertOnline()
+  await assertOnline()
   return seed
 }

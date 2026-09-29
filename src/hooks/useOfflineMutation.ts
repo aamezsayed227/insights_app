@@ -9,16 +9,14 @@ export function useOfflineMutation<TInput extends Record<string, unknown>>(
   return useMutation<{ queued: boolean }, Error, TInput>({
     // TanStack Query's default networkMode ('online') pauses the mutation
     // and never calls mutationFn at all while the browser reports itself
-    // offline — which would make our own navigator.onLine check below
+    // offline — which would make mockApiPost's connectivity check below
     // unreachable. 'always' hands control of offline handling entirely
     // to this function, which is the whole point of this hook.
     networkMode: 'always',
     mutationFn: async (input) => {
-      if (!navigator.onLine) {
-        await enqueueOutboxRow(entityType, endpoint, input)
-        return { queued: true }
-      }
-
+      // No navigator.onLine check here directly — mockApiPost's own
+      // assertOnline() is the single source of truth (see connectivity.ts
+      // for why it's more than a raw navigator.onLine read).
       try {
         await mockApiPost(endpoint, input)
         return { queued: false }

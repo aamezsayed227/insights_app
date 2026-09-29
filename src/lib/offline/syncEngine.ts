@@ -1,3 +1,4 @@
+import { isBrowserOnline } from './connectivity'
 import { offlineDb } from './db'
 import { ApiResponseError, mockApiPost, NetworkError } from './mockApi'
 import { decryptOutboxRow } from './repository'
@@ -14,18 +15,26 @@ export async function drainOutbox(): Promise<void> {
   useSyncEngineStore.getState().setSyncing(true)
 
   try {
+    const rows = await offlineDb.outbox
+      .where('status')
+      .anyOf('pending', 'failed')
+      .and((row) => row.retryCount < MAX_BACKOFF_RETRIES)
+      .sortBy('createdAt')
+
+    if (rows.length === 0) return
+
+    // Bail out before touching any row when we're genuinely offline —
+    // otherwise polling on a short interval (see startSyncEngine) would
+    // burn through MAX_BACKOFF_RETRIES purely from how often we poll,
+    // not from real failed attempts.
+    if (!(await isBrowserOnline())) return
+
     await offlineDb.syncMeta.put({
       id: SYNC_META_KEY,
       lastSyncAttemptAt: Date.now(),
       lastSuccessfulSyncAt:
         (await offlineDb.syncMeta.get(SYNC_META_KEY))?.lastSuccessfulSyncAt ?? null,
     })
-
-    const rows = await offlineDb.outbox
-      .where('status')
-      .anyOf('pending', 'failed')
-      .and((row) => row.retryCount < MAX_BACKOFF_RETRIES)
-      .sortBy('createdAt')
 
     for (const row of rows) {
       await offlineDb.outbox.update(row.id, { status: 'syncing' })
@@ -79,7 +88,13 @@ export async function triggerSync(): Promise<void> {
   await drainOutbox()
 }
 
-export function startSyncEngine(intervalMs = 60_000): () => void {
+// 5s, not 60s: the 'online' event below is a free instant trigger where
+// it fires, but Safari can give zero online/offline signal at all (see
+// connectivity.ts), leaving this interval as the only thing that notices
+// connectivity came back. A short interval is safe to poll this often
+// now — drainOutbox bails out immediately (one local IndexedDB read, no
+// network) whenever the outbox is empty or we're confirmed offline.
+export function startSyncEngine(intervalMs = 5_000): () => void {
   const handleOnline = () => void triggerSync()
   window.addEventListener('online', handleOnline)
 

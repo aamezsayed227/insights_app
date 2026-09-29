@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetConnectivityForTests } from './connectivity'
 import {
   ApiResponseError,
   getMockOutcome,
@@ -16,12 +17,14 @@ describe('mock API client', () => {
   beforeEach(() => {
     setMockOutcome('success')
     setOnline(true)
+    resetConnectivityForTests()
     vi.useFakeTimers()
   })
 
   afterEach(() => {
     vi.useRealTimers()
     setOnline(true)
+    resetConnectivityForTests()
   })
 
   it('defaults to the success outcome', () => {
@@ -77,5 +80,27 @@ describe('mock API client', () => {
     await expect(
       mockApiGet('/api/demo/notes/seed-1', { title: 'Seed note' }),
     ).rejects.toBeInstanceOf(NetworkError)
+  })
+
+  // Safari's navigator.onLine can stay `true` after Wi-Fi is disabled
+  // (webkit.org bug 225645) — an 'offline' event should still be trusted.
+  it('throws NetworkError when the offline event fired even though navigator.onLine is stale-true', async () => {
+    window.dispatchEvent(new Event('offline'))
+    const promise = mockApiPost('/api/demo/notes', { title: 'x' })
+    promise.catch(() => {})
+    await vi.runAllTimersAsync()
+    await expect(promise).rejects.toBeInstanceOf(NetworkError)
+  })
+
+  // The full real-world case, confirmed directly against Safari 27 with
+  // Wi-Fi genuinely disabled: navigator.onLine stays `true` AND neither
+  // the 'online' nor 'offline' event fires at all. The external probe in
+  // connectivity.ts is the only signal left — assertOnline must use it.
+  it('throws NetworkError when navigator.onLine is stale-true, no event fires, and the external probe fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Load failed')))
+    const promise = mockApiPost('/api/demo/notes', { title: 'x' })
+    promise.catch(() => {})
+    await vi.runAllTimersAsync()
+    await expect(promise).rejects.toBeInstanceOf(NetworkError)
   })
 })
